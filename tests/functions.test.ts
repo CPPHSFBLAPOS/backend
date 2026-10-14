@@ -97,8 +97,10 @@ describe('sams-lookup', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ item: { id: 'v2' }, cached: false, remaining: 29 });
 
+    expect(rpcCalls[0]).toEqual(['begin_sams_lookup', { p_query: "member's mark water 40 pack", p_url: null }]);
     const sent = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(sent.tools[0]).toMatchObject({ allowed_domains: ['samsclub.com'], max_uses: 3 });
+    expect(sent.tools[0]).toMatchObject({ allowed_domains: ['samsclub.com'], max_uses: 2 });
+    expect(sent).toMatchObject({ max_tokens: 8000, output_config: { effort: 'low' } });
     const saved = rpcCalls.find(([fn]) => fn === 'save_vendor_item')?.[1] as { p: Record<string, unknown> };
     expect(saved.p).toMatchObject({ price_cents: 548, units_per_pack: 40, item_number: '980012345', source: 'search' });
   });
@@ -117,6 +119,101 @@ describe('sams-lookup', () => {
     const res = await samsLookup(post({ mode: 'search', query: 'water' }));
     expect(res.status).toBe(502);
     expect(rpcCalls.map(([fn]) => fn)).not.toContain('save_vendor_item');
+  });
+
+  it('answers 504 with JSON when Claude takes too long', async () => {
+    rpcResults.begin_sams_lookup = { ok: true, cached: false, remaining: 29 };
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{}'))
+        .mockRejectedValueOnce(new DOMException('The operation was aborted due to timeout', 'TimeoutError')),
+    );
+    const res = await samsLookup(post({ mode: 'search', query: 'water' }));
+    expect(res.status).toBe(504);
+    expect(await res.json()).toMatchObject({ error: 'lookup_timeout' });
+    expect(rpcCalls.map(([fn]) => fn)).not.toContain('save_vendor_item');
+  });
+
+  it('answers 502 when Claude runs out of room or declines', async () => {
+    rpcResults.begin_sams_lookup = { ok: true, cached: false, remaining: 29 };
+    for (const stop_reason of ['max_tokens', 'refusal']) {
+      resetModelCache();
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(new Response('{}'))
+          .mockResolvedValueOnce(new Response(JSON.stringify({ ...listingReply, stop_reason }))),
+      );
+      const res = await samsLookup(post({ mode: 'search', query: 'water' }));
+      expect(res.status).toBe(502);
+      expect(await res.json()).toMatchObject({ error: 'lookup_failed' });
+    }
+    expect(rpcCalls.map(([fn]) => fn)).not.toContain('save_vendor_item');
+  });
+});
+
+describe('sams-lookup paste mode', () => {
+  const link = 'https://www.samsclub.com/ip/water/980012345';
+  const page = "Member's Mark Purified Water 40 pk $5.48 Item 980012345";
+
+  it('uses begin_sams_paste with the link, reads the text and saves the listing', async () => {
+    rpcResults.begin_sams_paste = { ok: true, cached: false, remaining: 9 };
+    rpcResults.save_vendor_item = { id: 'v3', name: 'Water 40 pk' };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(listingReply)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await samsLookup(post({ mode: 'paste', page_text: page, url: link }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ item: { id: 'v3' }, cached: false, remaining: 9 });
+
+    expect(rpcCalls[0]).toEqual(['begin_sams_paste', { p_url: link }]);
+    expect(rpcCalls.map(([fn]) => fn)).not.toContain('begin_sams_lookup');
+    // One call: no Models API lookup and no web search for pasted text.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sent.tools).toBeUndefined();
+    expect(sent).toMatchObject({ max_tokens: 8000, output_config: { effort: 'low' } });
+    expect(JSON.stringify(sent.messages)).toContain(page);
+    const saved = rpcCalls.find(([fn]) => fn === 'save_vendor_item')?.[1] as { p: Record<string, unknown> };
+    expect(saved.p).toMatchObject({ price_cents: 548, source: 'paste', query: null });
+  });
+
+  it('passes a null link when none was given', async () => {
+    rpcResults.begin_sams_paste = { ok: true, cached: false, remaining: 9 };
+    rpcResults.save_vendor_item = { id: 'v4' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(listingReply))));
+    const res = await samsLookup(post({ mode: 'paste', page_text: page }));
+    expect(res.status).toBe(200);
+    expect(rpcCalls[0]).toEqual(['begin_sams_paste', { p_url: null }]);
+  });
+
+  it('returns a recently checked listing without calling Claude', async () => {
+    rpcResults.begin_sams_paste = { ok: true, cached: true, item: { id: 'v1' } };
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await samsLookup(post({ mode: 'paste', page_text: page, url: link }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ item: { id: 'v1' }, cached: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stops at the paste daily limit', async () => {
+    rpcResults.begin_sams_paste = { ok: false, error: 'daily_limit', message: 'All 20 pastes used' };
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await samsLookup(post({ mode: 'paste', page_text: page }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'daily_limit', message: 'All 20 pastes used' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('needs page text before spending a paste', async () => {
+    const res = await samsLookup(post({ mode: 'paste', page_text: '   ', url: link }));
+    expect(res.status).toBe(400);
+    expect(rpcCalls).toHaveLength(0);
   });
 });
 

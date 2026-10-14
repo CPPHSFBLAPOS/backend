@@ -1,15 +1,33 @@
 import { HttpError, handle, json, readJson, requireEnv } from '../lib/http.ts';
-import { buildRequest, callClaude, extractJson, isSamsClubUrl, parseListing, pickSearchModel, type LookupInput } from '../lib/sams.ts';
+import {
+  LOOKUP_BUDGET_MS,
+  buildRequest,
+  callClaude,
+  extractJson,
+  isSamsClubUrl,
+  parseListing,
+  pickSearchModel,
+  type LookupInput,
+} from '../lib/sams.ts';
 import { getCaller, rpc } from '../lib/supabase.ts';
 
 type Body = { mode?: 'search' | 'paste'; query?: string; url?: string; page_text?: string };
 type Begin = { ok: boolean; cached?: boolean; item?: unknown; remaining?: number; error?: string; message?: string };
 
+function isTimeout(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
 // POST { mode: 'search', url? , query? } or { mode: 'paste', page_text, url? }
 // Takes a samsclub.com link or an item name, reuses a listing checked within
 // the cache window, otherwise asks Claude (web search on samsclub.com only),
 // validates the JSON and saves the listing to vendor_items.
+// The browser's request passes through a Netlify proxy that gives up after
+// 26 s, so the Claude call has to finish (or give up) within LOOKUP_BUDGET_MS
+// of the request arriving.
 export default handle(['POST'], async (req) => {
+  const deadline = Date.now() + LOOKUP_BUDGET_MS;
   const { client } = await getCaller(req, 'preauth_view');
   const body = await readJson<Body>(req);
   const mode = body.mode === 'paste' ? 'paste' : 'search';
@@ -21,10 +39,11 @@ export default handle(['POST'], async (req) => {
   if (mode === 'paste' && !body.page_text?.trim()) throw new HttpError(400, 'Paste the text of the product page.', 'bad_request');
 
   // The quota and the cache live in Postgres, checked with the member's token.
-  const begin = await rpc<Begin>(client, 'begin_sams_lookup', {
-    p_query: mode === 'paste' ? null : query,
-    p_url: mode === 'paste' ? null : url,
-  });
+  // Search and paste have separate daily caps; both answer in the same shape.
+  const begin =
+    mode === 'paste'
+      ? await rpc<Begin>(client, 'begin_sams_paste', { p_url: url ?? null })
+      : await rpc<Begin>(client, 'begin_sams_lookup', { p_query: query, p_url: url });
   if (begin.ok && begin.cached) return json(req, 200, { item: begin.item, cached: true });
   if (!begin.ok) throw new HttpError(429, begin.message ?? 'Daily lookup limit reached.', begin.error ?? 'daily_limit');
 
@@ -36,7 +55,7 @@ export default handle(['POST'], async (req) => {
   let listing;
   let usedModel: string;
   try {
-    const reply = await callClaude(apiKey, buildRequest(input, model ?? ''));
+    const reply = await callClaude(apiKey, buildRequest(input, model ?? ''), fetch, deadline);
     usedModel = reply.model;
     const raw = extractJson(reply.text) as Record<string, unknown>;
     if (raw && typeof raw === 'object' && 'error' in raw) {
@@ -45,6 +64,10 @@ export default handle(['POST'], async (req) => {
     listing = parseListing(raw, url);
   } catch (err) {
     if (err instanceof HttpError) throw err;
+    if (isTimeout(err)) {
+      console.error('sams-lookup timed out', err);
+      throw new HttpError(504, 'The lookup took too long. Paste the page text or type the item in.', 'lookup_timeout');
+    }
     console.error('sams-lookup failed', err);
     throw new HttpError(502, 'The lookup did not return a usable listing. Paste the page text or type the item in.', 'lookup_failed');
   }

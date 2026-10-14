@@ -41,10 +41,10 @@ export function json(req: Request, status: number, body: unknown): Response {
 type Handler = (req: Request) => Promise<Response>;
 
 // Wraps a handler with OPTIONS handling, a method check and error mapping.
+// A HEAD request to a GET handler runs it as a GET and returns the status and
+// headers without the body.
 export function handle(methods: string[], fn: Handler): Handler {
-  return async (req) => {
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) });
-    if (!methods.includes(req.method)) return json(req, 405, { error: 'method_not_allowed' });
+  const run = async (req: Request): Promise<Response> => {
     try {
       return await fn(req);
     } catch (err) {
@@ -54,6 +54,16 @@ export function handle(methods: string[], fn: Handler): Handler {
       console.error(err);
       return json(req, 500, { error: 'server_error', message: 'Something went wrong. Try again.' });
     }
+  };
+  return async (req) => {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) });
+    if (req.method === 'HEAD' && methods.includes('GET')) {
+      const res = await run(new Request(req.url, { method: 'GET', headers: req.headers }));
+      await res.body?.cancel();
+      return new Response(null, { status: res.status, headers: res.headers });
+    }
+    if (!methods.includes(req.method)) return json(req, 405, { error: 'method_not_allowed' });
+    return run(req);
   };
 }
 

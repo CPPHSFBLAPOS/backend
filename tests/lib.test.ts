@@ -117,6 +117,22 @@ describe('http helpers', () => {
     expect((await fn(new Request('http://x', { method: 'GET' }))).status).toBe(405);
   });
 
+  it('answers HEAD on a GET handler with the status and headers but no body', async () => {
+    const seen: string[] = [];
+    const fn = handle(['GET'], async (req) => {
+      seen.push(`${req.method} ${req.headers.get('x-test')}`);
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const res = await fn(new Request('http://x/health', { method: 'HEAD', headers: { 'x-test': 'yes' } }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/json');
+    expect(await res.text()).toBe('');
+    expect(seen).toEqual(['GET yes']);
+    // HEAD is still refused where GET is not allowed.
+    const postOnly = handle(['POST'], async () => new Response('x'));
+    expect((await postOnly(new Request('http://x', { method: 'HEAD' }))).status).toBe(405);
+  });
+
   it('escapes email HTML', () => {
     expect(escapeHtml('<b>"Tom" & Jerry\'s</b>')).toBe('&lt;b&gt;&quot;Tom&quot; &amp; Jerry&#39;s&lt;/b&gt;');
   });
