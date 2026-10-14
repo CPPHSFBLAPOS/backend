@@ -35,7 +35,7 @@ language sql security definer as $$
   select id from public.products where sku = p_sku
 $$;
 
-select plan(53);
+select plan(55);
 
 -------------------------------------------------------------------------------
 -- The permission matrix
@@ -63,6 +63,8 @@ select is((select count(*)::int from log_entries
           'a cashier cannot read other people''s log entries');
 select throws_ok($$ select * from list_members() $$, '42501', null, 'a cashier cannot list members');
 select ok((select count(*) from products) > 0, 'a cashier can read products');
+select is((select count(*)::int from stock_movements), 0, 'a cashier cannot read the stock ledger');
+select is((select on_hand from catalog() where sku = 'FBLA-0001'), 48, 'but catalog() shows them stock on hand');
 
 -------------------------------------------------------------------------------
 -- log_entries is append-only for every role

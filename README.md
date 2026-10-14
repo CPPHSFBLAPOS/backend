@@ -12,6 +12,7 @@ supabase/
     ..._reports.sql      every report number, computed in SQL
     ..._storage.sql      private buckets for receipts, signatures, outage sheets, PDFs
     ..._first_admins.sql the two Super Admins who can add everyone else
+    ..._catalog.sql      products with on-hand counts for the register (without exposing the ledger)
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/
