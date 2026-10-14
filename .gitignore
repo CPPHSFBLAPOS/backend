@@ -1,0 +1,13 @@
+node_modules/
+.netlify/
+.env
+.env.*
+!.env.example
+coverage/
+supabase/.branches/
+supabase/.temp/
+*.log
+backups/
+*.tgz
+*.gpg
+.DS_Store

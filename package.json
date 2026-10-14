@@ -1,0 +1,40 @@
+{
+  "name": "fbla-store-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CPPHS FBLA Store backend: Supabase schema, RPCs and tests, plus Netlify Functions.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "netlify dev",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:db": "supabase test db",
+    "test:db:plain": "scripts/db/test-plain.sh",
+    "test:concurrency": "vitest run --config vitest.concurrency.config.ts",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "import:base44": "node --experimental-strip-types scripts/import-base44.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "pdf-lib": "^1.17.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@netlify/functions": "^6.0.2",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "pg": "^8.23.1",
+    "supabase": "^2.120.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.4"
+  }
+}

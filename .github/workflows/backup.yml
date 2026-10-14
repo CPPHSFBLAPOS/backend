@@ -1,0 +1,46 @@
+# Weekly encrypted backup, for while the store stays on Supabase Free (which
+# keeps no backups). Restore steps are in RUNBOOK.md.
+#
+# Repository secrets:
+#   SUPABASE_DB_URL     Session pooler connection string (Settings > Database)
+#   BACKUP_PASSPHRASE   Held by the Advisor. Without it the backups are unreadable.
+name: Weekly backup
+
+on:
+  schedule:
+    - cron: '17 7 * * 0' # Sundays, early morning Eastern
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Dump roles, schema and data
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          mkdir dump
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f dump/roles.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f dump/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy -f dump/data.sql
+          tar czf backup.tgz -C dump .
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          name="fbla-store-$(date -u +%F).tgz.gpg"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+              --symmetric --cipher-algo AES256 -o "$name" backup.tgz
+          rm -rf dump backup.tgz
+          echo "BACKUP_NAME=$name" >> "$GITHUB_ENV"
+      # Artifacts expire after 56 days, so 8 weekly backups are kept.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: ${{ env.BACKUP_NAME }}
+          retention-days: 56
