@@ -13,6 +13,7 @@ supabase/
     ..._storage.sql      private buckets for receipts, signatures, outage sheets, PDFs
     ..._first_admins.sql the two Super Admins who can add everyone else
     ..._catalog.sql      products with on-hand counts for the register (without exposing the ledger)
+    ..._deploy_hardening.sql  explicit read grants, PIN hashes and gift card codes kept private, paste lookups
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/
@@ -64,15 +65,22 @@ No Docker? `npm run test:db:plain` builds a throwaway Postgres 15+ cluster, load
 
 ## Deploying
 
-1. Create the hosted Supabase project (US East). Link and push: `npx supabase link --project-ref <ref>` then `npx supabase db push`. This applies the migrations, including the two first Super Admins. `seed.sql` is never pushed.
-2. In the Supabase dashboard:
+Do these in order. Steps marked "check" catch the mistakes that are easy to make and hard to spot later.
+
+1. **Branches.** In both repos, create `main` from the current work and make it the default branch (GitHub > Settings > General > Default branch). Netlify uses the default branch as production, and CI only runs on `main` and pull requests.
+2. **Supabase project** (US East). `npx supabase link --project-ref <ref>`, then `npx supabase db push`. This applies every migration, including the two first Super Admins. `seed.sql` is never pushed.
+   - Check, in the SQL editor: `select has_table_privilege('authenticated', 'public.settings', 'select');` returns `true`. New projects grant nothing by default; the migrations grant reads explicitly.
+3. **Supabase dashboard.** Set these by hand. Do not run `supabase config push`: `config.toml` holds localhost URLs and would overwrite the production ones.
+   - Authentication > Sign In / Providers > Email: **Email OTP Length 6** and **Email OTP Expiration 600** seconds (the email says 10 minutes). Leave Confirm email on. The sign-in screen accepts 6 to 10 digits, so a mismatch will not lock anyone out, but the email text says 6.
    - Authentication > SMTP: Resend (`smtp.resend.com`, port 465, user `resend`, password = Resend API key), sender on the chapter's verified domain.
-   - Authentication > Email templates: paste `supabase/templates/sign-in-code.html` into Magic Link and Confirm signup, so emails carry the 6-digit code.
+   - Authentication > Email templates: paste `supabase/templates/sign-in-code.html` into Magic Link and Confirm signup, so emails carry the code.
    - Authentication > Hooks: enable "Before User Created" with the Postgres function `public.hook_before_user_created`.
-   - Authentication > URL configuration: the frontend's production URL.
-3. Create a Netlify site from this repo (on the chapter's store team). Set the variables from `.env.example`, scoped to Functions. Deploys publish the functions; `daily-reminders` runs every day at 12:00 UTC.
-4. Point the frontend's `netlify.toml` `/api/*` proxy at this site's URL.
-5. Add the repository secrets for the weekly backup (`SUPABASE_DB_URL`, `BACKUP_PASSPHRASE`) if the store stays on Supabase Free.
+   - Authentication > URL configuration: the frontend's production URL as Site URL.
+4. **Netlify, this repo.** Create a site from this repo on the chapter's team, production branch `main`, deploy previews on, branch deploys off. Set the variables from `.env.example`, scoped to Functions. Give `ANTHROPIC_API_KEY` a monthly spend limit in the Anthropic console. `daily-reminders` runs every day at 12:00 UTC.
+   - Name the site `cpphs-fbla-store-api` (Site configuration > Change site name), or put its real `https://<name>.netlify.app` address in the frontend's `netlify.toml`. Do this before the first frontend deploy: the frontend forwards members' sign-in tokens to that address.
+5. **Netlify, the frontend.** See its README.
+   - Check, on the first deploy preview: `/api/health` returns `{"ok":true,...}` with every `configured` flag true; then sign in as a real member with an emailed code and run one Sam's Club lookup.
+6. Add the repository secrets for the weekly backup (`SUPABASE_DB_URL`, `BACKUP_PASSPHRASE`) if the store stays on Supabase Free.
 
 ## Importing from Base44
 

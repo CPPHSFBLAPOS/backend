@@ -361,7 +361,7 @@ The database enforces every permission, so a bug in the app can't skip a rule, a
 - Members sign in with a one-time code emailed to their school address through Supabase Auth, sent by Resend. This works without district IT changing anything.
 - Only emails an admin has added to `members` get in. Anyone else sees "Ask the Advisor to add you."
 - Google sign-in can come later. Google blocks student accounts designated under 18 from [unconfigured third-party apps](https://knowledge.workspace.google.com/admin/getting-started/editions/manage-access-to-unconfigured-third-party-apps-for-users-designated-as-under-18) until district IT configures the app in the Admin console.
-- The register stays signed in as a shared Register account. Cashiers identify themselves with PINs hashed by pgcrypto `crypt()`, and 5 wrong tries lock that cashier out for 5 minutes.
+- The register stays signed in as a shared Register account. Cashiers identify themselves with PINs hashed by pgcrypto `crypt()`, and 5 wrong tries lock that cashier out for 5 minutes, and each lockout after that doubles (up to a day) until the right PIN or a reset.
 
 **Enforced in the database**
 
@@ -470,7 +470,7 @@ Build Phase 1, Foundation. Read docs/SPEC.md sections "Data model", "Roles and p
 
 1. Migrations for members, settings, categories, products, price_changes, stock_movements, a product_stock view, and log_entries. Money in bigint cents. RLS on every table.
 2. Sign-in with Supabase Auth email one-time codes. Only active members get in; anyone else sees "Ask the Advisor to add you." Seed depedros@cppasd.com as President and Super Admin, and depedroshawn@gmail.com as Super Admin with no role.
-3. Roles: advisor, president, treasurer, cashier, plus an is_super_admin flag. One SQL function answers "can the current user do this action" and every RLS policy and RPC uses it. A Members page for Super Admins and the Advisor to add people, set roles, and set or reset cashier PINs (hashed with pgcrypto crypt(); 5 wrong tries lock that cashier out for 5 minutes).
+3. Roles: advisor, president, treasurer, cashier, plus an is_super_admin flag. One SQL function answers "can the current user do this action" and every RLS policy and RPC uses it. A Members page for Super Admins and the Advisor to add people, set roles, and set or reset cashier PINs (hashed with pgcrypto crypt(); 5 wrong tries lock that cashier out for 5 minutes, doubling with each later lockout up to a day).
 4. Transaction log: log_entries is append-only. A trigger assigns seq and sets hash = SHA-256 of prev_hash plus the canonical JSON of the new entry. Revoke UPDATE and DELETE from every role and add a trigger that raises an error on either. Add verify_log() to recheck the numbering and the chain. A Log page with filters, links to records, and CSV export.
 5. Products: managed categories, auto SKU (FBLA-0001), optional UPC, price history, Smart Snacks flag, archive instead of delete, images uploaded to Storage, and a "Cost missing" badge.
 6. Stock: on hand = sum of stock_movements. An Adjust Stock action with reasons Damaged, Expired, Missing, Found, and Count correction. Each change is one RPC that writes the movement and its log entry in a single transaction.

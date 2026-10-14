@@ -31,11 +31,12 @@ create extension if not exists pgcrypto with schema extensions;
 
 grant usage on schema public, extensions, auth, storage to anon, authenticated, service_role;
 
--- Supabase grants the API roles everything in public by default and relies
--- on RLS and explicit revokes. Mirror that so revokes get tested.
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
-alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+-- Hosted Supabase projects created after 2026-05-30 give the API roles no
+-- default privileges on new tables in public, so the migrations grant SELECT
+-- explicitly. Plain Postgres behaves the same way (owner only, plus EXECUTE
+-- for PUBLIC on functions, which the migrations revoke), so add nothing here:
+-- a table the migrations forget to grant fails these tests like it would in
+-- production.
 
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
