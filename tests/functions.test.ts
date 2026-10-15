@@ -190,14 +190,15 @@ describe('sams-lookup paste mode', () => {
     expect(rpcCalls[0]).toEqual(['begin_sams_paste', { p_url: null }]);
   });
 
-  it('returns a recently checked listing without calling Claude', async () => {
-    rpcResults.begin_sams_paste = { ok: true, cached: true, item: { id: 'v1' } };
-    const fetchMock = vi.fn();
+  it('reads the pasted page even when a listing for that link is saved', async () => {
+    rpcResults.begin_sams_paste = { ok: true, cached: true, item: { id: 'v1', price_cents: 999 } };
+    rpcResults.save_vendor_item = { id: 'v1', price_cents: 548 };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(listingReply)));
     vi.stubGlobal('fetch', fetchMock);
     const res = await samsLookup(post({ mode: 'paste', page_text: page, url: link }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ item: { id: 'v1' }, cached: true });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ item: { id: 'v1', price_cents: 548 }, cached: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('stops at the paste daily limit', async () => {
@@ -214,6 +215,22 @@ describe('sams-lookup paste mode', () => {
     const res = await samsLookup(post({ mode: 'paste', page_text: '   ', url: link }));
     expect(res.status).toBe(400);
     expect(rpcCalls).toHaveLength(0);
+  });
+});
+
+describe('health', () => {
+  it('flags a missing service key and email links that still point at localhost', async () => {
+    const { default: health } = await import('../netlify/functions/health.ts');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+    vi.stubEnv('APP_URL', 'http://localhost:5173');
+    type Health = { configured: Record<string, boolean> };
+    let body = (await (await health(new Request('http://x/health'))).json()) as Health;
+    expect(body.configured).toMatchObject({ service_role: false, app_url: false });
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'sb_secret_x');
+    vi.stubEnv('APP_URL', 'https://cpphs-fbla-store.netlify.app');
+    body = (await (await health(new Request('http://x/health'))).json()) as Health;
+    expect(body.configured).toMatchObject({ service_role: true, app_url: true });
+    vi.unstubAllEnvs();
   });
 });
 

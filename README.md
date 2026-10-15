@@ -14,6 +14,7 @@ supabase/
     ..._first_admins.sql the two Super Admins who can add everyone else
     ..._catalog.sql      products with on-hand counts for the register (without exposing the ledger)
     ..._deploy_hardening.sql  explicit read grants, PIN hashes and gift card codes kept private, paste lookups
+    ..._review_fixes.sql      retried card sales keep their codes, pastes always read, sign-in links follow email
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/
@@ -68,19 +69,27 @@ No Docker? `npm run test:db:plain` builds a throwaway Postgres 15+ cluster, load
 Do these in order. Steps marked "check" catch the mistakes that are easy to make and hard to spot later.
 
 1. **Branches.** In both repos, create `main` from the current work and make it the default branch (GitHub > Settings > General > Default branch). Netlify uses the default branch as production, and CI only runs on `main` and pull requests.
-2. **Supabase project** (US East). `npx supabase link --project-ref <ref>`, then `npx supabase db push`. This applies every migration, including the two first Super Admins. `seed.sql` is never pushed.
+2. **Names.** Pick the two Netlify site names now, so each site knows the other's address before its first deploy: for example `cpphs-fbla-store` (the app) and `cpphs-fbla-store-api` (this repo). The app's address is then `https://cpphs-fbla-store.netlify.app`. If you pick a different API name, put its address in the frontend's `netlify.toml` before deploying the frontend: the frontend forwards members' sign-in tokens to that address.
+3. **Supabase project** (US East). `npx supabase link --project-ref <ref>`, then `npx supabase db push`. This applies every migration, including the two first Super Admins. `seed.sql` is never pushed.
    - Check, in the SQL editor: `select has_table_privilege('authenticated', 'public.settings', 'select');` returns `true`. New projects grant nothing by default; the migrations grant reads explicitly.
-3. **Supabase dashboard.** Set these by hand. Do not run `supabase config push`: `config.toml` holds localhost URLs and would overwrite the production ones.
-   - Authentication > Sign In / Providers > Email: **Email OTP Length 6** and **Email OTP Expiration 600** seconds (the email says 10 minutes). Leave Confirm email on. The sign-in screen accepts 6 to 10 digits, so a mismatch will not lock anyone out, but the email text says 6.
+4. **Supabase dashboard.** Set these by hand. Do not run `supabase config push`: `config.toml` holds localhost URLs and would overwrite the production ones.
+   - Authentication > Sign In / Providers > Email: **Email OTP Length 6** and **Email OTP Expiration 600** seconds (the email says 10 minutes). Leave **Confirm email** and **Secure email change** on. The sign-in screen accepts 6 to 10 digits, so a length mismatch will not lock anyone out, but the email text says 6.
    - Authentication > SMTP: Resend (`smtp.resend.com`, port 465, user `resend`, password = Resend API key), sender on the chapter's verified domain.
    - Authentication > Email templates: paste `supabase/templates/sign-in-code.html` into Magic Link and Confirm signup, so emails carry the code.
    - Authentication > Hooks: enable "Before User Created" with the Postgres function `public.hook_before_user_created`.
-   - Authentication > URL configuration: the frontend's production URL as Site URL.
-4. **Netlify, this repo.** Create a site from this repo on the chapter's team, production branch `main`, deploy previews on, branch deploys off. Set the variables from `.env.example`, scoped to Functions. Give `ANTHROPIC_API_KEY` a monthly spend limit in the Anthropic console. `daily-reminders` runs every day at 12:00 UTC.
-   - Name the site `cpphs-fbla-store-api` (Site configuration > Change site name), or put its real `https://<name>.netlify.app` address in the frontend's `netlify.toml`. Do this before the first frontend deploy: the frontend forwards members' sign-in tokens to that address.
-5. **Netlify, the frontend.** See its README.
-   - Check, on the first deploy preview: `/api/health` returns `{"ok":true,...}` with every `configured` flag true; then sign in as a real member with an emailed code and run one Sam's Club lookup.
-6. Add the repository secrets for the weekly backup (`SUPABASE_DB_URL`, `BACKUP_PASSPHRASE`) if the store stays on Supabase Free.
+   - Authentication > URL configuration: the app's address as Site URL.
+   - Project Settings > API Keys: new projects have a **Publishable key** (`sb_publishable_...`) and **Secret keys** (`sb_secret_...`) instead of the older anon and service_role keys. Wherever this repo says anon key, use the Publishable key; wherever it says service role key, use a Secret key.
+5. **Netlify, this repo.** Create a site from this repo on the chapter's team with the name from step 2, production branch `main`, deploy previews on, branch deploys off. Before the first deploy, add the variables from `.env.example` (Add environment variables on the setup screen), scoped to Functions:
+   - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (Publishable key), `SUPABASE_SERVICE_ROLE_KEY` (a Secret key);
+   - `ANTHROPIC_API_KEY`, with a monthly spend limit set in the Anthropic console;
+   - `RESEND_API_KEY` and `EMAIL_FROM` on the verified domain;
+   - `APP_URL` = the app's address from step 2 (email links point there);
+   - leave `ALLOWED_ORIGINS` unset.
+
+   Functions only see the variables that existed when they were deployed. If you add or change one later, redeploy (Deploys > Trigger deploy > Deploy site; 15 credits). `daily-reminders` runs every day at 12:00 UTC.
+6. **Netlify, the frontend.** See its README.
+   - Check, on the app's production address: `/api/health` returns `{"ok":true,...}` with every `configured` flag true. Then sign in as a real member with an emailed code and run one Sam's Club lookup.
+7. Add the repository secrets for the weekly backup (`SUPABASE_DB_URL`, `BACKUP_PASSPHRASE`) if the store stays on Supabase Free.
 
 ## Importing from Base44
 

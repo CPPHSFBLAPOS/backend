@@ -40,11 +40,12 @@ export default handle(['POST'], async (req) => {
 
   // The quota and the cache live in Postgres, checked with the member's token.
   // Search and paste have separate daily caps; both answer in the same shape.
+  // A paste is always read: people paste because the saved listing is wrong.
   const begin =
     mode === 'paste'
       ? await rpc<Begin>(client, 'begin_sams_paste', { p_url: url ?? null })
       : await rpc<Begin>(client, 'begin_sams_lookup', { p_query: query, p_url: url });
-  if (begin.ok && begin.cached) return json(req, 200, { item: begin.item, cached: true });
+  if (mode === 'search' && begin.ok && begin.cached) return json(req, 200, { item: begin.item, cached: true });
   if (!begin.ok) throw new HttpError(429, begin.message ?? 'Daily lookup limit reached.', begin.error ?? 'daily_limit');
 
   const apiKey = requireEnv('ANTHROPIC_API_KEY');
