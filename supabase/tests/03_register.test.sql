@@ -33,6 +33,11 @@ create function pg_temp.product(p_sku text) returns uuid
 language sql security definer as $$
   select id from public.products where sku = p_sku
 $$;
+-- client_uuid is not readable over the API, so count through a definer helper.
+create function pg_temp.sales_with(p_uuid uuid) returns integer
+language sql security definer as $$
+  select count(*)::int from public.sales where client_uuid = p_uuid
+$$;
 create function pg_temp.on_hand(p_sku text) returns integer
 language sql security definer as $$
   select coalesce(sum(m.qty), 0)::int from public.stock_movements m
@@ -72,7 +77,7 @@ select is((:'sale_a'::jsonb -> 'sale' -> 'lines' -> 0 ->> 'unit_cost_cents')::bi
 select is(complete_sale('11111111-1111-1111-1111-111111111111', :'shift', 'regular',
                         pg_temp.cart('FBLA-0001', 2), pg_temp.cash(200), 500) ->> 'duplicate', 'true',
           'sending the same sale twice returns the first one');
-select is((select count(*)::int from sales where client_uuid = '11111111-1111-1111-1111-111111111111'), 1,
+select is(pg_temp.sales_with('11111111-1111-1111-1111-111111111111'), 1,
           'complete_sale saves once when sent twice');
 select is(pg_temp.on_hand('FBLA-0001'), 46, 'stock dropped once');
 

@@ -47,10 +47,10 @@ language sql as $$ select jsonb_build_array(jsonb_build_object('method', 'cash',
 create function pg_temp.sell_card(p_uuid uuid, p_shift uuid) returns jsonb
 language sql as $$
   select complete_sale(p_uuid, p_shift, 'regular',
-                       '[{"kind": "gift_card_load", "amount_cents": 2000}]', pg_temp.cash(2000))
+                       '[{"kind": "gift_card_load", "amount_cents": 2000}]', pg_temp.cash(2000), 2500)
 $$;
 
-select plan(14);
+select plan(18);
 
 -------------------------------------------------------------------------------
 -- A retried gift card sale gets its code back
@@ -61,13 +61,20 @@ select (open_shift(pg_temp.member('cashier@example.com'), '3333', 5000) ->> 'shi
 select r -> 'new_cards' -> 0 ->> 'code' as card, r -> 'sale' ->> 'number' as sale_no
 from pg_temp.sell_card(:'cu', :'shift') r \gset
 
-select r ->> 'duplicate' as dup, r -> 'new_cards' -> 0 ->> 'code' as again
+select r ->> 'duplicate' as dup, r -> 'new_cards' -> 0 ->> 'code' as again, r ->> 'change_cents' as change
 from pg_temp.sell_card(:'cu', :'shift') r \gset
 select is(:'dup'::text, 'true', 'sending the same sale again does not ring it twice');
 select is(:'again'::text, :'card', 'and the register gets the new card''s code back');
-select is((select count(*)::int from sales where client_uuid = :'cu'), 1, 'there is still one sale');
+select is(:'change'::text, '500', 'with the change the server worked out');
 select ok(not (find_sale(:'sale_no'::int) ? 'client_uuid'), 'a sale lookup does not show the client id');
+select throws_ok($$ select client_uuid from sales $$, '42501', null,
+                 'and nobody can read client ids from the sales table');
+select lives_ok($$ select id, number, total_cents from sales $$, 'while the rest of a sale still reads');
 select pg_temp.logout();
+select is((select count(*)::int from sales where client_uuid = :'cu'), 1, 'there is still one sale');
+select ok(not has_function_privilege('authenticated',
+            'private.complete_sale_core(uuid, uuid, public.sale_type, jsonb, jsonb, bigint, text, text)', 'execute'),
+          'members cannot call the sale core directly');
 
 select pg_temp.login('cashier2@example.com');
 select is(pg_temp.sell_card(:'cu', :'shift') -> 'new_cards', '[]'::jsonb,

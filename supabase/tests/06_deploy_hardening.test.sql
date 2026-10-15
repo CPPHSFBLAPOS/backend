@@ -58,9 +58,9 @@ select plan(39);
 -- Reads are granted explicitly; RLS decides the rows
 -------------------------------------------------------------------------------
 select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
-           where n.nspname = 'public' and c.relkind in ('r', 'v', 'p') and c.relname <> 'members'
+           where n.nspname = 'public' and c.relkind in ('r', 'v', 'p') and c.relname not in ('members', 'sales')
              and not has_table_privilege('authenticated', c.oid, 'select')),
-          0, 'signed-in members can select from every table and view');
+          0, 'signed-in members can select from every table and view (members and sales by column)');
 select is((select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'p')
              and (has_table_privilege('anon', c.oid, 'select')

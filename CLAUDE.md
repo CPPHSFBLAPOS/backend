@@ -27,7 +27,7 @@ Full spec: `docs/SPEC.md`. Read the section for your task before planning.
 - Stock on hand is the sum of `stock_movements`. Gift card balance is the sum of `gift_card_txns`. Never add an editable stock or balance column.
 - `sale_lines.unit_cost_cents` is saved at the moment of sale. Reports use it, never the product's current cost.
 - Nothing is deleted. Archive products; void or refund sales.
-- Every new table or view gets RLS enabled (views: `security_invoker`), explicit read policies, and `grant select on public.<name> to authenticated, service_role;` in the same migration. Hosted projects no longer grant table privileges by default, and the plain-Postgres shim matches that. No write policies or write grants. Never grant a secret column: `members` uses column grants so `pin_hash` stays unreadable.
+- Every new table or view gets RLS enabled (views: `security_invoker`), explicit read policies, and `grant select on public.<name> to authenticated, service_role;` in the same migration. Hosted projects no longer grant table privileges by default, and the plain-Postgres shim matches that. No write policies or write grants. Never grant a secret column: `members` and `sales` use column grants so `pin_hash` and `client_uuid` stay unreadable; a column added to either needs adding to its grant.
 - Only email-code sessions are members: `current_member_id()` ignores password sessions. Keep that check if you replace the function.
 - RPCs are `security definer` with `set search_path = public, pg_temp`. Internal helpers live in the `private` schema, which the API cannot call.
 - An RPC that checks a PIN must return a jsonb error (not raise) after a wrong PIN, or the failed-try counter rolls back.

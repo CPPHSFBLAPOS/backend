@@ -15,6 +15,7 @@ supabase/
     ..._catalog.sql      products with on-hand counts for the register (without exposing the ledger)
     ..._deploy_hardening.sql  explicit read grants, PIN hashes and gift card codes kept private, paste lookups
     ..._review_fixes.sql      retried card sales keep their codes, pastes always read, sign-in links follow email
+    ..._retry_followups.sql   client ids stay private; retries answer with the change due
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/
