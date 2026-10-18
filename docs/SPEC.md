@@ -91,7 +91,7 @@ One React app runs on every device: the register, officers' phones and laptops, 
 
 | Screen | Path | Who sees it | What's on it |
 | --- | --- | --- | --- |
-| Sign in | `/sign-in` | Everyone | Email one-time code |
+| Sign in | `/sign-in` | Everyone | Email one-time code (or sign-in link) |
 | Register | `/register` | Register account + cashier PIN | Shift open and close, product grid, cart, payments, voids, refunds, outage entry, training mode |
 | Inventory | `/inventory` | Officers | Products, categories, stock adjustments, counts, CSV import |
 | Pre-auth | `/preauth`, `/preauth/:id` | Officers, Advisor | Form list, the paper-form layout, Sam's Club lookup, ROI, signatures, purchase, receipt, receiving |
@@ -359,6 +359,7 @@ The database enforces every permission, so a bug in the app can't skip a rule, a
 **Sign-in**
 
 - Members sign in with a one-time code emailed to their school address through Supabase Auth, sent by Resend. This works without district IT changing anything.
+- Without custom SMTP, Supabase sends its own email, which carries a sign-in link instead of a code. The app takes either: the link signs in only the browser that asked for it (PKCE). Supabase's own email reaches only the people on the Supabase project's team, a few an hour, so it is for testing; real sign-ups need custom SMTP and the code template.
 - Sign-up is open: anyone's first sign-in with an email code makes them a Cashier (`ensure_member()`). A Cashier can't open a shift until a Super Admin sets their first PIN, and the register's people picker shows a plain Cashier only themselves and the officers. Deactivating a member blocks them, and their email can't make a new account.
 - Google sign-in can come later. Google blocks student accounts designated under 18 from [unconfigured third-party apps](https://knowledge.workspace.google.com/admin/getting-started/editions/manage-access-to-unconfigured-third-party-apps-for-users-designated-as-under-18) until district IT configures the app in the Admin console.
 - The register stays signed in as a shared Register account. Cashiers identify themselves with PINs hashed by pgcrypto `crypt()`, and 5 wrong tries lock that cashier out for 5 minutes, and each lockout after that doubles (up to a day) until the right PIN or a reset.
