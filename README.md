@@ -84,7 +84,7 @@ Do these in order. Steps marked "check" catch the mistakes that are easy to make
 5. **Netlify, this repo.** Create a site from this repo on the chapter's team with the name from step 2, production branch `main`, deploy previews on, branch deploys off. Before the first deploy, add the variables from `.env.example` (Add environment variables on the setup screen), scoped to Functions:
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (Publishable key), `SUPABASE_SERVICE_ROLE_KEY` (a Secret key);
    - `ANTHROPIC_API_KEY`, with a monthly spend limit set in the Anthropic console;
-   - `RESEND_API_KEY` and `EMAIL_FROM` on the verified domain;
+   - `BREVO_API_KEY` (or `RESEND_API_KEY`) and `EMAIL_FROM`: a sender verified in Brevo, or an address on a domain verified in Resend;
    - `APP_URL` = the app's address from step 2 (email links point there);
    - leave `ALLOWED_ORIGINS` unset.
 
