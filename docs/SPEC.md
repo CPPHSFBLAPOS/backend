@@ -98,7 +98,7 @@ One React app runs on every device: the register, officers' phones and laptops, 
 | Gift cards | `/gift-cards` | Officers | Issue, reload, look up, deactivate, print |
 | Reports | `/reports` | Officers, Advisor | Dashboard, tabs, PDF and CSV exports |
 | Log | `/log` | Officers, Advisor; cashiers see their own shifts | Transaction log and Check Log |
-| Members | `/members` | Super Admin, Advisor | People, roles, PINs |
+| Members | `/members` | Super Admin | People, roles, PINs, approving sign-ups |
 | Settings | `/settings` | Super Admin, Advisor | Store rules, open days, categories |
 
 **Building blocks**
@@ -149,7 +149,7 @@ The backend has two halves. Supabase holds the data and enforces every rule, and
 | Inventory | `save_product`, `change_price`, `archive_product`, `adjust_stock`, `start_count`, `approve_count` | Officers |
 | Pre-auth | `save_preauth`, `sign_preauth`, `reject_preauth`, `record_purchase`, `add_receipt`, `receive_preauth`, `approve_overage`, `close_preauth` | Officers, Advisor |
 | Gift cards | `issue_gift_card`, `reload_gift_card`, `deactivate_and_transfer` (redeeming happens inside `complete_sale`) | Register, officers |
-| Admin and log | `save_member`, `set_pin`, `save_settings`, `verify_log` | Super Admin, Advisor |
+| Admin and log | `save_member`, `set_pin` (Super Admin; members change their own PIN once set), `save_settings` and `verify_log` (Super Admin, Advisor), `ensure_member` (anyone signed in with an email code) | as listed |
 
 **Netlify Functions: secret keys and outside services**
 
