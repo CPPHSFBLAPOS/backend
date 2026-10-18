@@ -16,6 +16,7 @@ supabase/
     ..._deploy_hardening.sql  explicit read grants, PIN hashes and gift card codes kept private, paste lookups
     ..._review_fixes.sql      retried card sales keep their codes, pastes always read, sign-in links follow email
     ..._retry_followups.sql   client ids stay private; retries answer with the change due
+    ..._open_signup.sql       anyone can sign in as a Cashier; Super Admins manage members; deactivating blocks
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/

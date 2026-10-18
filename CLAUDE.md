@@ -29,6 +29,7 @@ Full spec: `docs/SPEC.md`. Read the section for your task before planning.
 - Nothing is deleted. Archive products; void or refund sales.
 - Every new table or view gets RLS enabled (views: `security_invoker`), explicit read policies, and `grant select on public.<name> to authenticated, service_role;` in the same migration. Hosted projects no longer grant table privileges by default, and the plain-Postgres shim matches that. No write policies or write grants. Never grant a secret column: `members` and `sales` use column grants so `pin_hash` and `client_uuid` stay unreadable; a column added to either needs adding to its grant.
 - Only email-code sessions are members: `current_member_id()` ignores password sessions. Keep that check if you replace the function.
+- Sign-up is open: `ensure_member()` makes a first email-code sign-in a Cashier. Only Super Admins manage members, a Super Admin sets everyone's first PIN, and deactivating a member blocks their email in the sign-up hook.
 - RPCs are `security definer` with `set search_path = public, pg_temp`. Internal helpers live in the `private` schema, which the API cannot call.
 - An RPC that checks a PIN must return a jsonb error (not raise) after a wrong PIN, or the failed-try counter rolls back.
 - Netlify Functions verify the caller's Supabase token and call Supabase with it (`getCaller`). Only scheduled functions use the service role key.
