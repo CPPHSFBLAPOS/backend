@@ -43,7 +43,7 @@ export async function getCaller(req: Request, permission?: string): Promise<Call
 
   const { data: member, error } = await client.rpc('whoami');
   if (error) throw new HttpError(502, error.message, 'database_error');
-  if (!member) throw new HttpError(403, 'Ask the Advisor to add you.', 'not_member');
+  if (!member) throw new HttpError(403, 'Not a member yet. Sign in with the code from your email.', 'not_member');
   const m = member as Member;
   if (permission && !m.permissions.includes(permission)) {
     throw new HttpError(403, 'You do not have permission to do that.', 'forbidden');

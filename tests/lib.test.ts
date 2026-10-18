@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mapBase44GiftCard, mapBase44Product, mapBase44Sale, parseCsv } from '../netlify/lib/csv.ts';
 import { dollarsToCents, formatCents } from '../netlify/lib/money.ts';
 import { lineRoi, percent, totalRoi } from '../netlify/lib/roi.ts';
 import { corsHeaders, handle, HttpError } from '../netlify/lib/http.ts';
 import { bearerToken } from '../netlify/lib/supabase.ts';
-import { escapeHtml } from '../netlify/lib/email.ts';
+import { escapeHtml, parseFrom, sendEmail } from '../netlify/lib/email.ts';
 
 describe('money', () => {
   it('parses dollars into whole cents without floating point drift', () => {
@@ -135,5 +135,51 @@ describe('http helpers', () => {
 
   it('escapes email HTML', () => {
     expect(escapeHtml('<b>"Tom" & Jerry\'s</b>')).toBe('&lt;b&gt;&quot;Tom&quot; &amp; Jerry&#39;s&lt;/b&gt;');
+  });
+});
+
+describe('email', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 201, headers: { 'content-type': 'application/json' } });
+
+  it('reads the sender name and address from EMAIL_FROM', () => {
+    expect(parseFrom('CPPHS FBLA Store <store@example.org>')).toEqual({ name: 'CPPHS FBLA Store', email: 'store@example.org' });
+    expect(parseFrom('"FBLA" <a@b.co>')).toEqual({ name: 'FBLA', email: 'a@b.co' });
+    expect(parseFrom('a@b.co')).toEqual({ email: 'a@b.co' });
+  });
+
+  it('sends through Brevo when its key is set, attachments included', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    vi.stubEnv('RESEND_API_KEY', 're_test');
+    vi.stubEnv('EMAIL_FROM', 'CPPHS FBLA Store <me@gmail.com>');
+    const fetchMock = vi.fn().mockResolvedValue(ok({ messageId: '<m1>' }));
+    const r = await sendEmail(
+      { to: ['a@x.org', 'a@x.org', 'b@x.org'], subject: 'Hi', html: '<p>Hi</p>', attachments: [{ filename: 'f.pdf', content: new Uint8Array([1, 2, 3]) }] },
+      fetchMock,
+    );
+    expect(r).toEqual({ sent: true, id: '<m1>' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.brevo.com/v3/smtp/email');
+    expect(init.headers['api-key']).toBe('xkeysib-test');
+    expect(JSON.parse(init.body)).toEqual({
+      sender: { name: 'CPPHS FBLA Store', email: 'me@gmail.com' },
+      to: [{ email: 'a@x.org' }, { email: 'b@x.org' }],
+      subject: 'Hi',
+      htmlContent: '<p>Hi</p>',
+      attachment: [{ name: 'f.pdf', content: 'AQID' }],
+    });
+  });
+
+  it('falls back to Resend, and logs instead of sending with no key', async () => {
+    vi.stubEnv('BREVO_API_KEY', '');
+    vi.stubEnv('RESEND_API_KEY', 're_test');
+    const fetchMock = vi.fn().mockResolvedValue(ok({ id: 'r1' }));
+    expect(await sendEmail({ to: ['a@x.org'], subject: 'Hi', html: 'x' }, fetchMock)).toEqual({ sent: true, id: 'r1' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.resend.com/emails');
+
+    vi.stubEnv('RESEND_API_KEY', '');
+    const none = vi.fn();
+    expect(await sendEmail({ to: ['a@x.org'], subject: 'Hi', html: 'x' }, none)).toEqual({ sent: false });
+    expect(none).not.toHaveBeenCalled();
   });
 });

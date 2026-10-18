@@ -16,6 +16,7 @@ supabase/
     ..._deploy_hardening.sql  explicit read grants, PIN hashes and gift card codes kept private, paste lookups
     ..._review_fixes.sql      retried card sales keep their codes, pastes always read, sign-in links follow email
     ..._retry_followups.sql   client ids stay private; retries answer with the change due
+    ..._open_signup.sql       anyone can sign in as a Cashier; Super Admins manage members; deactivating blocks
   tests/        pgTAP: permissions, the append-only log, RPC rules, report math
   seed.sql      made-up people and products for local development
 netlify/
@@ -75,21 +76,22 @@ Do these in order. Steps marked "check" catch the mistakes that are easy to make
    - Check, in the SQL editor: `select has_table_privilege('authenticated', 'public.settings', 'select');` returns `true`. New projects grant nothing by default; the migrations grant reads explicitly.
 4. **Supabase dashboard.** Set these by hand. Do not run `supabase config push`: `config.toml` holds localhost URLs and would overwrite the production ones.
    - Authentication > Sign In / Providers > Email: **Email OTP Length 6** and **Email OTP Expiration 600** seconds (the email says 10 minutes). Leave **Confirm email** and **Secure email change** on. The sign-in screen accepts 6 to 10 digits, so a length mismatch will not lock anyone out, but the email text says 6.
-   - Authentication > SMTP: Resend (`smtp.resend.com`, port 465, user `resend`, password = Resend API key), sender on the chapter's verified domain.
-   - Authentication > Email templates: paste `supabase/templates/sign-in-code.html` into Magic Link and Confirm signup, so emails carry the code.
+   - Authentication > SMTP: Resend (`smtp.resend.com`, port 465, user `resend`, password = Resend API key), sender on the chapter's verified domain. Brevo works too (`smtp-relay.brevo.com`, port 587, your Brevo SMTP login and SMTP key), sending from a verified sender.
+   - Authentication > Email templates: paste `supabase/templates/sign-in-code.html` into Magic Link and Confirm signup, so emails carry the code. Keep the code: school email filters often open links to scan them, which uses a one-time link up before the student clicks it.
+   - Without custom SMTP, Supabase sends its own email, a sign-in link instead of a code. The app takes the link too, but Supabase's own email reaches only the people on the Supabase project's team, a few an hour. Use it to test alone; set up SMTP before anyone else signs up.
    - Authentication > Hooks: enable "Before User Created" with the Postgres function `public.hook_before_user_created`.
-   - Authentication > URL configuration: the app's address as Site URL.
+   - Authentication > URL configuration: the app's address as Site URL. Under Redirect URLs add the app's address, `https://**--<app site name>.netlify.app/**` for deploy previews, and `http://localhost:5173`, so a sign-in link comes back to the copy of the app that asked for it.
    - Project Settings > API Keys: new projects have a **Publishable key** (`sb_publishable_...`) and **Secret keys** (`sb_secret_...`) instead of the older anon and service_role keys. Wherever this repo says anon key, use the Publishable key; wherever it says service role key, use a Secret key.
 5. **Netlify, this repo.** Create a site from this repo on the chapter's team with the name from step 2, production branch `main`, deploy previews on, branch deploys off. Before the first deploy, add the variables from `.env.example` (Add environment variables on the setup screen), scoped to Functions:
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (Publishable key), `SUPABASE_SERVICE_ROLE_KEY` (a Secret key);
    - `ANTHROPIC_API_KEY`, with a monthly spend limit set in the Anthropic console;
-   - `RESEND_API_KEY` and `EMAIL_FROM` on the verified domain;
+   - `BREVO_API_KEY` (or `RESEND_API_KEY`) and `EMAIL_FROM`: a sender verified in Brevo, or an address on a domain verified in Resend;
    - `APP_URL` = the app's address from step 2 (email links point there);
    - leave `ALLOWED_ORIGINS` unset.
 
    Functions only see the variables that existed when they were deployed. If you add or change one later, redeploy (Deploys > Trigger deploy > Deploy site; 15 credits). `daily-reminders` runs every day at 12:00 UTC.
 6. **Netlify, the frontend.** See its README.
-   - Check, on the app's production address: `/api/health` returns `{"ok":true,...}` with every `configured` flag true. Then sign in as a real member with an emailed code and run one Sam's Club lookup.
+   - Check, on the app's production address: `/api/health` returns `{"ok":true,...}` with every `configured` flag true. Then sign in as a real member with an emailed code (or link) and run one Sam's Club lookup.
 7. Add the repository secrets for the weekly backup (`SUPABASE_DB_URL`, `BACKUP_PASSPHRASE`) if the store stays on Supabase Free.
 
 ## Importing from Base44

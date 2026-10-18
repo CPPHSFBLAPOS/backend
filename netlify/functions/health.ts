@@ -1,3 +1,4 @@
+import { emailConfigured } from '../lib/email.ts';
 import { handle, json } from '../lib/http.ts';
 
 // Used by the app's home page to show that the functions are reachable, and
@@ -12,7 +13,8 @@ export default handle(['GET'], async (req) =>
       supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
       service_role: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-      resend: Boolean(process.env.RESEND_API_KEY),
+      // Email works through Brevo or Resend; the app reads this flag as "Email".
+      resend: emailConfigured(),
       app_url: isPublicUrl(process.env.APP_URL),
     },
   }),

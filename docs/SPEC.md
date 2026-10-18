@@ -91,14 +91,14 @@ One React app runs on every device: the register, officers' phones and laptops, 
 
 | Screen | Path | Who sees it | What's on it |
 | --- | --- | --- | --- |
-| Sign in | `/sign-in` | Everyone | Email one-time code |
+| Sign in | `/sign-in` | Everyone | Email one-time code (or sign-in link) |
 | Register | `/register` | Register account + cashier PIN | Shift open and close, product grid, cart, payments, voids, refunds, outage entry, training mode |
 | Inventory | `/inventory` | Officers | Products, categories, stock adjustments, counts, CSV import |
 | Pre-auth | `/preauth`, `/preauth/:id` | Officers, Advisor | Form list, the paper-form layout, Sam's Club lookup, ROI, signatures, purchase, receipt, receiving |
 | Gift cards | `/gift-cards` | Officers | Issue, reload, look up, deactivate, print |
 | Reports | `/reports` | Officers, Advisor | Dashboard, tabs, PDF and CSV exports |
 | Log | `/log` | Officers, Advisor; cashiers see their own shifts | Transaction log and Check Log |
-| Members | `/members` | Super Admin, Advisor | People, roles, PINs |
+| Members | `/members` | Super Admin | People, roles, PINs, approving sign-ups |
 | Settings | `/settings` | Super Admin, Advisor | Store rules, open days, categories |
 
 **Building blocks**
@@ -140,7 +140,7 @@ The backend has two halves. Supabase holds the data and enforces every rule, and
 **Supabase: data and rules**
 
 - Postgres with the tables in the Data model, row-level security on every table, and one RPC function per action.
-- Auth sends one-time codes through Resend's SMTP. Only emails on the member list get in.
+- Auth sends one-time codes through Resend's SMTP. Anyone can sign in; a first sign-in becomes a Cashier, and a deactivated member's email is turned away.
 - Storage buckets: `receipts` and `signatures` are private and shown through short-lived signed URLs. `product-images` can be read publicly.
 
 | RPC group | Functions | Called by |
@@ -149,7 +149,7 @@ The backend has two halves. Supabase holds the data and enforces every rule, and
 | Inventory | `save_product`, `change_price`, `archive_product`, `adjust_stock`, `start_count`, `approve_count` | Officers |
 | Pre-auth | `save_preauth`, `sign_preauth`, `reject_preauth`, `record_purchase`, `add_receipt`, `receive_preauth`, `approve_overage`, `close_preauth` | Officers, Advisor |
 | Gift cards | `issue_gift_card`, `reload_gift_card`, `deactivate_and_transfer` (redeeming happens inside `complete_sale`) | Register, officers |
-| Admin and log | `save_member`, `set_pin`, `save_settings`, `verify_log` | Super Admin, Advisor |
+| Admin and log | `save_member`, `set_pin` (Super Admin; members change their own PIN once set), `save_settings` and `verify_log` (Super Admin, Advisor), `ensure_member` (anyone signed in with an email code) | as listed |
 
 **Netlify Functions: secret keys and outside services**
 
@@ -235,7 +235,7 @@ Each member has one role: Advisor, President, Treasurer, or Cashier. Super Admin
 | Verify an outage entry (not your own) | ✓ | ✓ | ✓ | ✓ | — |
 | View reports | ✓ | ✓ | ✓ | ✓ | — |
 | View the transaction log | ✓ | ✓ | ✓ | ✓ | Own shifts |
-| Add members, set roles, reset PINs | ✓ | ✓ | — | — | — |
+| Add members, set roles, reset PINs | Super Admin only | — | — | — | — |
 | Change settings | ✓ | ✓ | — | — | — |
 | Edit or delete log entries | — | — | — | — | — |
 
@@ -359,7 +359,8 @@ The database enforces every permission, so a bug in the app can't skip a rule, a
 **Sign-in**
 
 - Members sign in with a one-time code emailed to their school address through Supabase Auth, sent by Resend. This works without district IT changing anything.
-- Only emails an admin has added to `members` get in. Anyone else sees "Ask the Advisor to add you."
+- Without custom SMTP, Supabase sends its own email, which carries a sign-in link instead of a code. The app takes either: the link signs in only the browser that asked for it (PKCE). Supabase's own email reaches only the people on the Supabase project's team, a few an hour, so it is for testing; real sign-ups need custom SMTP and the code template.
+- Sign-up is open: anyone's first sign-in with an email code makes them a Cashier (`ensure_member()`). A Cashier can't open a shift until a Super Admin sets their first PIN, and the register's people picker shows a plain Cashier only themselves and the officers. Deactivating a member blocks them, and their email can't make a new account.
 - Google sign-in can come later. Google blocks student accounts designated under 18 from [unconfigured third-party apps](https://knowledge.workspace.google.com/admin/getting-started/editions/manage-access-to-unconfigured-third-party-apps-for-users-designated-as-under-18) until district IT configures the app in the Admin console.
 - The register stays signed in as a shared Register account. Cashiers identify themselves with PINs hashed by pgcrypto `crypt()`, and 5 wrong tries lock that cashier out for 5 minutes, and each lockout after that doubles (up to a day) until the right PIN or a reset.
 
@@ -469,8 +470,8 @@ Done when `netlify dev` shows the page with both checks passing and typecheck, l
 Build Phase 1, Foundation. Read docs/SPEC.md sections "Data model", "Roles and permissions", "Security and privacy", and the Inventory and Transaction log parts of "Feature specs". Make a plan and wait for my OK.
 
 1. Migrations for members, settings, categories, products, price_changes, stock_movements, a product_stock view, and log_entries. Money in bigint cents. RLS on every table.
-2. Sign-in with Supabase Auth email one-time codes. Only active members get in; anyone else sees "Ask the Advisor to add you." Seed depedros@cppasd.com as President and Super Admin, and depedroshawn@gmail.com as Super Admin with no role.
-3. Roles: advisor, president, treasurer, cashier, plus an is_super_admin flag. One SQL function answers "can the current user do this action" and every RLS policy and RPC uses it. A Members page for Super Admins and the Advisor to add people, set roles, and set or reset cashier PINs (hashed with pgcrypto crypt(); 5 wrong tries lock that cashier out for 5 minutes, doubling with each later lockout up to a day).
+2. Sign-in with Supabase Auth email one-time codes. Anyone can sign in and starts as a Cashier; deactivated members are blocked. Seed depedros@cppasd.com as President and Super Admin, and depedroshawn@gmail.com as Super Admin with no role.
+3. Roles: advisor, president, treasurer, cashier, plus an is_super_admin flag. One SQL function answers "can the current user do this action" and every RLS policy and RPC uses it. A Members page for Super Admins to approve people, set roles, make other Super Admins, and set or reset PINs (hashed with pgcrypto crypt(); 5 wrong tries lock that cashier out for 5 minutes, doubling with each later lockout up to a day).
 4. Transaction log: log_entries is append-only. A trigger assigns seq and sets hash = SHA-256 of prev_hash plus the canonical JSON of the new entry. Revoke UPDATE and DELETE from every role and add a trigger that raises an error on either. Add verify_log() to recheck the numbering and the chain. A Log page with filters, links to records, and CSV export.
 5. Products: managed categories, auto SKU (FBLA-0001), optional UPC, price history, Smart Snacks flag, archive instead of delete, images uploaded to Storage, and a "Cost missing" badge.
 6. Stock: on hand = sum of stock_movements. An Adjust Stock action with reasons Damaged, Expired, Missing, Found, and Count correction. Each change is one RPC that writes the movement and its log entry in a single transaction.

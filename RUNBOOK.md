@@ -30,12 +30,12 @@ Handing cash to the Treasurer mid-shift: Register > **Handoff**. Both people ent
 
 ## Each fall: members and roles
 
-1. The Advisor opens **Members**, deactivates graduates, and adds new officers and cashiers by school email.
-2. Set each person's role (Advisor, President, Treasurer, Cashier) and a 4-digit PIN.
+1. New people sign in on their own with a code emailed to them. Their first sign-in makes them a **Cashier**.
+2. A Super Admin opens **Members**: deactivates graduates (that also blocks their email), sets officers' roles (Advisor, President, Treasurer), and gives each new cashier a 4-digit PIN. Nobody can open a shift until a Super Admin has set their first PIN.
 3. Make sure the shared **Register** account (role: Register) is active.
 4. Check **Settings**: starting float, open days for the year, pre-auth limit.
 
-New people sign in with a code emailed to their school address. Anyone not on the list sees "Ask the Advisor to add you."
+To block someone, turn **Active** off on their row. They can no longer use the app, and their email can't make a new account.
 
 ## If the app stops answering after a break
 
